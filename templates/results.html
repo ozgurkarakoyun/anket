@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="result-card">
+    <div class="thank-you">{{ T['thank_you'] }}</div>
+    <h1>{{ T['results_title'] }}</h1>
+
+    <div class="patient-summary">
+        <div><strong>{{ T['patient'] }}:</strong> {{ r['name'] }}{% if r['age'] %} ({{ r['age'] }}){% endif %}</div>
+        <div><strong>{{ T['date'] }}:</strong> {{ r['created_at'][:10] }}</div>
+        <div>
+            <strong>{{ T['procedure_type'] }}:</strong>
+            {% if r['procedure_type'] == 'knee' %}{{ T['knee'] }}
+            {% elif r['procedure_type'] == 'hip' %}{{ T['hip'] }}
+            {% elif r['procedure_type'] == 'osseointegration' %}{{ T['osseointegration'] }}
+            {% else %}{{ T['socket_prosthesis'] }}{% endif %}
+            ·
+            {% if r['side'] == 'right' %}{{ T['right'] }}
+            {% elif r['side'] == 'left' %}{{ T['left'] }}
+            {% else %}{{ T['bilateral'] }}{% endif %}
+        </div>
+    </div>
+
+    <div class="scores">
+        {% if r['side'] == 'bilateral' %}
+            <div class="score-block">
+                <div class="score-label">{{ T['right_side'] }}</div>
+                <div class="score-value">{{ '%.1f'|format(r['fjs_score_right']) if r['fjs_score_right'] is not none else '—' }}</div>
+                <div class="score-out-of">/ 100</div>
+                {% if score_label_right %}<div class="score-qual">{{ score_label_right }}</div>{% endif %}
+            </div>
+            <div class="score-block">
+                <div class="score-label">{{ T['left_side'] }}</div>
+                <div class="score-value">{{ '%.1f'|format(r['fjs_score_left']) if r['fjs_score_left'] is not none else '—' }}</div>
+                <div class="score-out-of">/ 100</div>
+                {% if score_label_left %}<div class="score-qual">{{ score_label_left }}</div>{% endif %}
+            </div>
+        {% else %}
+            <div class="score-block big">
+                <div class="score-label">{{ T['fjs_score'] }}</div>
+                <div class="score-value">{{ '%.1f'|format(r['fjs_score_unilateral']) if r['fjs_score_unilateral'] is not none else '—' }}</div>
+                <div class="score-out-of">/ 100</div>
+                {% if score_label_uni %}<div class="score-qual">{{ score_label_uni }}</div>{% endif %}
+            </div>
+        {% endif %}
+    </div>
+
+    <p class="score-explanation">{{ T['score_interpretation'] }}</p>
+
+    <div class="actions no-print">
+        <button onclick="window.print()" class="btn btn-ghost">🖨 {{ T['print'] }}</button>
+        <a href="{{ url_for('index') }}" class="btn btn-primary">{{ T['new_assessment'] }}</a>
+    </div>
+</div>
+{% endblock %}

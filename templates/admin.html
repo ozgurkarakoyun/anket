@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="admin-header">
+    <h2>{{ T['all_responses'] }} ({{ rows|length }})</h2>
+    <div>
+        <a href="{{ url_for('admin_export_csv') }}" class="btn btn-ghost">⬇ {{ T['export_csv'] }}</a>
+        <a href="{{ url_for('admin_logout') }}" class="btn btn-ghost">{{ T['logout'] }}</a>
+    </div>
+</div>
+
+{% if rows %}
+<div class="table-wrap">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>{{ T['date'] }}</th>
+                <th>{{ T['name'] }}</th>
+                <th>{{ T['age'] }}</th>
+                <th>{{ T['procedure_type'] }}</th>
+                <th>{{ T['side'] }}</th>
+                <th>FJS ({{ T['right'] }})</th>
+                <th>FJS ({{ T['left'] }})</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for r in rows %}
+            <tr>
+                <td>{{ r['id'] }}</td>
+                <td>{{ r['created_at'][:16] }}</td>
+                <td>{{ r['name'] }}</td>
+                <td>{{ r['age'] or '—' }}</td>
+                <td>
+                    {% if r['procedure_type'] == 'knee' %}{{ T['knee'] }}
+                    {% elif r['procedure_type'] == 'hip' %}{{ T['hip'] }}
+                    {% elif r['procedure_type'] == 'osseointegration' %}{{ T['osseointegration'] }}
+                    {% else %}{{ T['socket_prosthesis'] }}{% endif %}
+                </td>
+                <td>
+                    {% if r['side'] == 'right' %}{{ T['right'] }}
+                    {% elif r['side'] == 'left' %}{{ T['left'] }}
+                    {% else %}{{ T['bilateral'] }}{% endif %}
+                </td>
+                <td>
+                    {% if r['fjs_score_right'] is not none %}{{ '%.1f'|format(r['fjs_score_right']) }}
+                    {% elif r['fjs_score_unilateral'] is not none and r['side'] == 'right' %}{{ '%.1f'|format(r['fjs_score_unilateral']) }}
+                    {% else %}—{% endif %}
+                </td>
+                <td>
+                    {% if r['fjs_score_left'] is not none %}{{ '%.1f'|format(r['fjs_score_left']) }}
+                    {% elif r['fjs_score_unilateral'] is not none and r['side'] == 'left' %}{{ '%.1f'|format(r['fjs_score_unilateral']) }}
+                    {% else %}—{% endif %}
+                </td>
+                <td>
+                    <a href="{{ url_for('result', response_id=r['id']) }}" class="btn btn-small">{{ T['view'] }}</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<p class="muted">{{ T['no_responses'] }}</p>
+{% endif %}
+{% endblock %}

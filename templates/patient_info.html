@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>{{ T['patient_info'] }}</h2>
+
+<form method="post" class="card form" id="patientForm">
+    <input type="hidden" name="lang" value="{{ lang }}">
+
+    <div class="grid-2">
+        <label class="full">
+            <span>{{ T['name'] }} *</span>
+            <input type="text" name="name" required value="{{ form.get('name', '') }}">
+        </label>
+
+        <label>
+            <span>{{ T['age'] }}</span>
+            <input type="number" name="age" min="1" max="120" value="{{ form.get('age', '') }}">
+        </label>
+    </div>
+
+    <hr>
+
+    <fieldset>
+        <legend>{{ T['procedure_type'] }} *</legend>
+        <div class="radio-grid">
+            <label class="radio-card">
+                <input type="radio" name="procedure_type" value="knee" required
+                       {% if form.get('procedure_type') == 'knee' %}checked{% endif %}>
+                <span class="icon">🦵</span>
+                <span>{{ T['knee'] }}</span>
+            </label>
+            <label class="radio-card">
+                <input type="radio" name="procedure_type" value="hip"
+                       {% if form.get('procedure_type') == 'hip' %}checked{% endif %}>
+                <span class="icon">🦴</span>
+                <span>{{ T['hip'] }}</span>
+            </label>
+            <label class="radio-card">
+                <input type="radio" name="procedure_type" value="osseointegration"
+                       {% if form.get('procedure_type') == 'osseointegration' %}checked{% endif %}>
+                <span class="icon">⚙️</span>
+                <span>{{ T['osseointegration'] }}</span>
+            </label>
+            <label class="radio-card">
+                <input type="radio" name="procedure_type" value="socket_prosthesis"
+                       {% if form.get('procedure_type') == 'socket_prosthesis' %}checked{% endif %}>
+                <span class="icon">🦿</span>
+                <span>{{ T['socket_prosthesis'] }}</span>
+            </label>
+        </div>
+    </fieldset>
+
+    <fieldset>
+        <legend>{{ T['side'] }} *</legend>
+        <div class="radio-row">
+            <label class="radio-pill">
+                <input type="radio" name="side" value="right" required
+                       {% if form.get('side') == 'right' %}checked{% endif %}>
+                <span>{{ T['right'] }}</span>
+            </label>
+            <label class="radio-pill">
+                <input type="radio" name="side" value="left"
+                       {% if form.get('side') == 'left' %}checked{% endif %}>
+                <span>{{ T['left'] }}</span>
+            </label>
+            <label class="radio-pill">
+                <input type="radio" name="side" value="bilateral"
+                       {% if form.get('side') == 'bilateral' %}checked{% endif %}>
+                <span>{{ T['bilateral'] }}</span>
+            </label>
+        </div>
+    </fieldset>
+
+    {# ───────── Side-specific blocks ─────────
+       Each block renders all possible fields. JS toggles classes on the parent
+       (.proc-knee | .proc-hip | .proc-osseo | .proc-socket) so CSS shows only
+       the relevant fields, and JS sets the `required` attribute accordingly.
+    #}
+    {% for side in ['right', 'left'] %}
+    <div class="side-block side-{{ side }}" data-side="{{ side }}">
+        <h3 class="side-heading">
+            {{ T['right_side'] if side == 'right' else T['left_side'] }}
+        </h3>
+
+        {# Surgery date — knee / hip / osseointegration #}
+        <div class="surgery-date-field">
+            <h4 class="dyn-label">
+                <span class="d-knee">{{ T['date_label_knee'] }}</span>
+                <span class="d-hip">{{ T['date_label_hip'] }}</span>
+                <span class="d-osseo">{{ T['date_label_osseo'] }}</span>
+            </h4>
+            <div class="date-row">
+                <select name="surgery_month_{{ side }}" class="js-surgery-month">
+                    <option value="">{{ T['month'] }}</option>
+                    {% for i in range(1, 13) %}
+                        <option value="{{ i }}"
+                            {% if form.get('surgery_month_' ~ side)|string == i|string %}selected{% endif %}>
+                            {{ T['months'][i-1] }}
+                        </option>
+                    {% endfor %}
+                </select>
+                <select name="surgery_year_{{ side }}" class="js-surgery-year">
+                    <option value="">{{ T['year'] }}</option>
+                    {% for y in range(2026, 1979, -1) %}
+                        <option value="{{ y }}"
+                            {% if form.get('surgery_year_' ~ side)|string == y|string %}selected{% endif %}>
+                            {{ y }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        {# Amputation date — socket prosthesis only (full month + year) #}
+        <div class="amputation-date-field">
+            <h4 class="dyn-label">{{ T['date_label_socket'] }}</h4>
+            <div class="date-row">
+                <select name="amputation_month_{{ side }}" class="js-amp-month">
+                    <option value="">{{ T['month'] }}</option>
+                    {% for i in range(1, 13) %}
+                        <option value="{{ i }}"
+                            {% if form.get('amputation_month_' ~ side)|string == i|string %}selected{% endif %}>
+                            {{ T['months'][i-1] }}
+                        </option>
+                    {% endfor %}
+                </select>
+                <select name="amputation_year_{{ side }}" class="js-amp-year-socket">
+                    <option value="">{{ T['year'] }}</option>
+                    {% for y in range(2026, 1949, -1) %}
+                        <option value="{{ y }}"
+                            {% if form.get('amputation_year_' ~ side)|string == y|string %}selected{% endif %}>
+                            {{ y }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        {# Amputation year (year only) — osseointegration #}
+        <div class="amputation-year-field">
+            <label>
+                <span>{{ T['amputation_year'] }}</span>
+                <select name="amputation_year_{{ side }}" class="js-amp-year-osseo">
+                    <option value="">{{ T['year'] }}</option>
+                    {% for y in range(2026, 1949, -1) %}
+                        <option value="{{ y }}"
+                            {% if form.get('amputation_year_' ~ side)|string == y|string %}selected{% endif %}>
+                            {{ y }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </label>
+        </div>
+
+        {# Amputation level — osseointegration AND socket prosthesis #}
+        <div class="amputation-level-field">
+            <label>
+                <span>{{ T['amputation_level'] }}</span>
+                <select name="amputation_level_{{ side }}" class="js-amp-level">
+                    <option value="">{{ T['select'] }}</option>
+                    <option value="transfemoral"
+                        {% if form.get('amputation_level_' ~ side) == 'transfemoral' %}selected{% endif %}>
+                        {{ T['amp_transfemoral'] }}
+                    </option>
+                    <option value="knee_disart"
+                        {% if form.get('amputation_level_' ~ side) == 'knee_disart' %}selected{% endif %}>
+                        {{ T['amp_knee_disart'] }}
+                    </option>
+                    <option value="transtibial"
+                        {% if form.get('amputation_level_' ~ side) == 'transtibial' %}selected{% endif %}>
+                        {{ T['amp_transtibial'] }}
+                    </option>
+                    <option value="hip_disart"
+                        {% if form.get('amputation_level_' ~ side) == 'hip_disart' %}selected{% endif %}>
+                        {{ T['amp_hip_disart'] }}
+                    </option>
+                </select>
+            </label>
+        </div>
+    </div>
+    {% endfor %}
+
+    <div class="actions">
+        <a href="{{ url_for('index') }}" class="btn btn-ghost">← {{ T['back'] }}</a>
+        <button type="submit" class="btn btn-primary">{{ T['next'] }} →</button>
+    </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/form.js') }}"></script>
+{% endblock %}

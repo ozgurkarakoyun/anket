@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>
+    {% if patient.procedure_type == 'osseointegration' %}
+        {{ T['question_intro_osseo'] }}
+    {% elif patient.procedure_type == 'socket_prosthesis' %}
+        {{ T['question_intro_prosthesis'] }}
+    {% else %}
+        {{ T['question_intro_joint'] }}
+    {% endif %}
+</h2>
+
+<p class="muted">
+    <strong>{{ patient.name }}</strong> ·
+    {% if patient.procedure_type == 'knee' %}{{ T['knee'] }}
+    {% elif patient.procedure_type == 'hip' %}{{ T['hip'] }}
+    {% elif patient.procedure_type == 'osseointegration' %}{{ T['osseointegration'] }}
+    {% else %}{{ T['socket_prosthesis'] }}{% endif %} ·
+    {% if patient.side == 'right' %}{{ T['right'] }}
+    {% elif patient.side == 'left' %}{{ T['left'] }}
+    {% else %}{{ T['bilateral'] }}{% endif %}
+</p>
+
+<form method="post" class="card form questions-form">
+    <input type="hidden" name="lang" value="{{ lang }}">
+
+    {% if bilateral %}
+        <div class="bilateral-header">
+            <div class="side-label right">{{ T['right_side'] }}</div>
+            <div class="side-label left">{{ T['left_side'] }}</div>
+        </div>
+
+        {% for q in questions %}
+        {% set qi = loop.index0 %}
+        <div class="question-block bilateral">
+            <div class="q-text"><span class="q-num">{{ loop.index }}.</span> {{ q }}</div>
+            <div class="bilateral-answers">
+                <div class="side-col">
+                    {% for opt in answers %}
+                    <label class="answer-option">
+                        <input type="radio" name="q{{ qi }}_right" value="{{ loop.index0 }}" required>
+                        <span>{{ opt }}</span>
+                    </label>
+                    {% endfor %}
+                </div>
+                <div class="side-col">
+                    {% for opt in answers %}
+                    <label class="answer-option">
+                        <input type="radio" name="q{{ qi }}_left" value="{{ loop.index0 }}" required>
+                        <span>{{ opt }}</span>
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+
+    {% else %}
+        {% for q in questions %}
+        {% set qi = loop.index0 %}
+        <div class="question-block">
+            <div class="q-text"><span class="q-num">{{ loop.index }}.</span> {{ q }}</div>
+            <div class="answer-options">
+                {% for opt in answers %}
+                <label class="answer-option">
+                    <input type="radio" name="q{{ qi }}" value="{{ loop.index0 }}" required>
+                    <span>{{ opt }}</span>
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+    {% endif %}
+
+    <div class="actions">
+        <a href="{{ url_for('patient_info') }}" class="btn btn-ghost">← {{ T['back'] }}</a>
+        <button type="submit" class="btn btn-primary">{{ T['submit'] }} ✓</button>
+    </div>
+</form>
+{% endblock %}

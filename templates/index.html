@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero">
+    <h1>{{ T['app_title'] }}</h1>
+    <p class="lead">{{ T['doctor_title'] }} — {{ T['doctor_name'] }}</p>
+
+    <div class="card">
+        <p class="muted">{{ T['select_language'] }}</p>
+        <div class="lang-grid">
+            {% for code, info in languages.items() %}
+                <a class="lang-card {% if code == lang %}active{% endif %}" href="?lang={{ code }}">
+                    <span class="flag">{{ info.flag }}</span>
+                    <span class="name">{{ info.name }}</span>
+                </a>
+            {% endfor %}
+        </div>
+
+        <p class="consent">{{ T['consent'] }}</p>
+
+        <a href="{{ url_for('patient_info', lang=lang) }}" class="btn btn-primary btn-large">
+            {{ T['start'] }} →
+        </a>
+    </div>
+</section>
+{% endblock %}

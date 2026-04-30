@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="{{ lang }}" dir="{{ lang_dir }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ T['app_title'] }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    {% if lang_dir == 'rtl' %}
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/rtl.css') }}">
+    {% endif %}
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🦴</text></svg>">
+</head>
+<body>
+    <header class="topbar">
+        <div class="container topbar-inner">
+            <a href="{{ url_for('index') }}" class="brand">
+                <span class="brand-mark">FJS-12</span>
+                <span class="brand-doctor">{{ T['doctor_name'] }}</span>
+            </a>
+            <div class="lang-switcher">
+                {% for code, info in languages.items() %}
+                    <a href="?lang={{ code }}" class="lang-btn {% if code == lang %}active{% endif %}">
+                        {{ info.flag }} {{ info.name }}
+                    </a>
+                {% endfor %}
+            </div>
+        </div>
+    </header>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <div class="container">
+                {% for category, message in messages %}
+                    <div class="flash flash-{{ category }}">{{ message }}</div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="footer">
+        <div class="container">
+            <small>FJS-12 © Behrend et al. 2012 · {{ T['doctor_name'] }} — {{ T['doctor_title'] }}</small>
+        </div>
+    </footer>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

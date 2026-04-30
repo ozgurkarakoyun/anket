@@ -1,0 +1,21 @@
+/* RTL adjustments for Arabic */
+
+[dir="rtl"] {
+    text-align: right;
+}
+
+[dir="rtl"] .topbar-inner {
+    flex-direction: row-reverse;
+}
+
+[dir="rtl"] .actions {
+    flex-direction: row-reverse;
+}
+
+[dir="rtl"] .lang-switcher {
+    flex-direction: row-reverse;
+}
+
+[dir="rtl"] body {
+    font-family: "Noto Sans Arabic", "Segoe UI", Tahoma, Arial, sans-serif;
+}
