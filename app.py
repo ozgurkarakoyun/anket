@@ -19,6 +19,10 @@ from flask import (
     session, abort, Response, flash, g
 )
 
+from openpyxl import Workbook as ExcelWorkbook
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
+
 from translations import LANGUAGES, QUESTIONS, ANSWERS, T, t, PROCEDURES, AMPUTEE_PROCEDURES
 from scoring import calculate_fjs_score, score_label
 
@@ -214,6 +218,71 @@ def build_answer_rows(questions, answers, lang):
             'answer': answer_text(lang, value),
         })
     return rows
+
+
+def build_export_headers():
+    """Build one canonical export header list for both CSV and Excel."""
+    base_headers = [
+        'id', 'created_at', 'language', 'name', 'age',
+        'procedure_type', 'side',
+        'surgery_month_right', 'surgery_year_right',
+        'surgery_month_left',  'surgery_year_left',
+        'amputation_month_right', 'amputation_year_right',
+        'amputation_level_right', 'amputation_level_right_label',
+        'amputation_month_left',  'amputation_year_left',
+        'amputation_level_left', 'amputation_level_left_label',
+        'fjs_right', 'fjs_left', 'fjs_unilateral',
+    ]
+
+    answer_headers = []
+    for i in range(1, 13):
+        answer_headers.extend([f'right_q{i}_value', f'right_q{i}_answer'])
+    for i in range(1, 13):
+        answer_headers.extend([f'left_q{i}_value', f'left_q{i}_answer'])
+    for i in range(1, 13):
+        answer_headers.extend([f'unilateral_q{i}_value', f'unilateral_q{i}_answer'])
+
+    return base_headers + answer_headers + ['answers_json']
+
+
+def build_export_row(row):
+    """Build one canonical export data row for both CSV and Excel."""
+    lang = row['language'] if row['language'] in ANSWERS else DEFAULT_LANG
+    right_answers, left_answers, unilateral_answers = get_answer_lists(row)
+
+    answer_values = []
+    for value in right_answers:
+        answer_values.extend([value, answer_text(lang, value)])
+    for value in left_answers:
+        answer_values.extend([value, answer_text(lang, value)])
+    for value in unilateral_answers:
+        answer_values.extend([value, answer_text(lang, value)])
+
+    return [
+        row['id'], row['created_at'], row['language'], row['name'], row['age'],
+        row['procedure_type'], row['side'],
+        row['surgery_month_right'], row['surgery_year_right'],
+        row['surgery_month_left'], row['surgery_year_left'],
+        row['amputation_month_right'], row['amputation_year_right'],
+        row['amputation_level_right'], amputation_level_text(row['amputation_level_right']),
+        row['amputation_month_left'], row['amputation_year_left'],
+        row['amputation_level_left'], amputation_level_text(row['amputation_level_left']),
+        row['fjs_score_right'], row['fjs_score_left'], row['fjs_score_unilateral'],
+    ] + answer_values + [row['answers_json'] or '']
+
+
+def get_export_table():
+    """Return headers and rows for all admin exports."""
+    db = get_db()
+    rows = db.execute('SELECT * FROM responses ORDER BY created_at DESC').fetchall()
+    headers = build_export_headers()
+    data_rows = [build_export_row(row) for row in rows]
+    return headers, data_rows
+
+
+def export_filename(extension):
+    """Return a timestamped filename; seconds avoid repeated cached filenames."""
+    return f'fjs_responses_{datetime.now().strftime("%Y%m%d_%H%M%S")}.{extension}'
 
 
 # ---------- Routes ----------
@@ -432,64 +501,84 @@ def admin_responses():
 @app.route('/admin/export.csv')
 @admin_required
 def admin_export_csv():
-    db = get_db()
-    rows = db.execute('SELECT * FROM responses ORDER BY created_at DESC').fetchall()
+    headers, data_rows = get_export_table()
 
     output = io.StringIO()
     output.write('\ufeff')  # BOM for Excel UTF-8 compatibility
     writer = csv.writer(output)
+    writer.writerow(headers)
+    writer.writerows(data_rows)
 
-    base_headers = [
-        'id', 'created_at', 'language', 'name', 'age',
-        'procedure_type', 'side',
-        'surgery_month_right', 'surgery_year_right',
-        'surgery_month_left',  'surgery_year_left',
-        'amputation_month_right', 'amputation_year_right',
-        'amputation_level_right', 'amputation_level_right_label',
-        'amputation_month_left',  'amputation_year_left',
-        'amputation_level_left', 'amputation_level_left_label',
-        'fjs_right', 'fjs_left', 'fjs_unilateral',
-    ]
-
-    answer_headers = []
-    for i in range(1, 13):
-        answer_headers.extend([f'right_q{i}_value', f'right_q{i}_answer'])
-    for i in range(1, 13):
-        answer_headers.extend([f'left_q{i}_value', f'left_q{i}_answer'])
-    for i in range(1, 13):
-        answer_headers.extend([f'unilateral_q{i}_value', f'unilateral_q{i}_answer'])
-    writer.writerow(base_headers + answer_headers + ['answers_json'])
-
-    for r in rows:
-        lang = r['language'] if r['language'] in ANSWERS else DEFAULT_LANG
-        right_answers, left_answers, unilateral_answers = get_answer_lists(r)
-
-        answer_values = []
-        for value in right_answers:
-            answer_values.extend([value, answer_text(lang, value)])
-        for value in left_answers:
-            answer_values.extend([value, answer_text(lang, value)])
-        for value in unilateral_answers:
-            answer_values.extend([value, answer_text(lang, value)])
-
-        writer.writerow([
-            r['id'], r['created_at'], r['language'], r['name'], r['age'],
-            r['procedure_type'], r['side'],
-            r['surgery_month_right'], r['surgery_year_right'],
-            r['surgery_month_left'],  r['surgery_year_left'],
-            r['amputation_month_right'], r['amputation_year_right'],
-            r['amputation_level_right'], amputation_level_text(r['amputation_level_right']),
-            r['amputation_month_left'],  r['amputation_year_left'],
-            r['amputation_level_left'], amputation_level_text(r['amputation_level_left']),
-            r['fjs_score_right'], r['fjs_score_left'], r['fjs_score_unilateral'],
-        ] + answer_values + [r['answers_json']])
-
-    return Response(
+    response = Response(
         output.getvalue(),
         mimetype='text/csv',
         headers={
             'Content-Type': 'text/csv; charset=utf-8',
-            'Content-Disposition': f'attachment; filename=fjs_responses_{datetime.now().strftime("%Y%m%d_%H%M")}.csv',
+            'Content-Disposition': f'attachment; filename={export_filename("csv")}',
+            'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+            'Pragma': 'no-cache',
+            'Expires': '0',
+        },
+    )
+    return response
+
+
+@app.route('/admin/export.xlsx')
+@admin_required
+def admin_export_xlsx():
+    headers, data_rows = get_export_table()
+
+    workbook = ExcelWorkbook()
+    sheet = workbook.active
+    sheet.title = 'FJS Yanıtları'
+    sheet.append(headers)
+    for data_row in data_rows:
+        sheet.append(data_row)
+
+    header_fill = PatternFill(fill_type='solid', fgColor='1F4E78')
+    header_font = Font(bold=True, color='FFFFFF')
+    thin_border = Border(bottom=Side(style='thin', color='D9E2F3'))
+
+    for cell in sheet[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+        cell.border = thin_border
+
+    for row in sheet.iter_rows(min_row=2):
+        for cell in row:
+            cell.alignment = Alignment(vertical='top', wrap_text=True)
+            cell.border = thin_border
+
+    sheet.freeze_panes = 'A2'
+    sheet.auto_filter.ref = sheet.dimensions
+
+    for column_cells in sheet.columns:
+        max_len = 0
+        col_letter = get_column_letter(column_cells[0].column)
+        for cell in column_cells:
+            value = '' if cell.value is None else str(cell.value)
+            max_len = max(max_len, len(value))
+        if col_letter in ('D', 'W'):
+            width = min(max(max_len + 2, 18), 45)
+        elif 'answer' in str(column_cells[0].value).lower() or col_letter == get_column_letter(len(headers)):
+            width = min(max(max_len + 2, 18), 40)
+        else:
+            width = min(max(max_len + 2, 10), 24)
+        sheet.column_dimensions[col_letter].width = width
+
+    xlsx_io = io.BytesIO()
+    workbook.save(xlsx_io)
+    xlsx_io.seek(0)
+
+    return Response(
+        xlsx_io.getvalue(),
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        headers={
+            'Content-Disposition': f'attachment; filename={export_filename("xlsx")}',
+            'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+            'Pragma': 'no-cache',
+            'Expires': '0',
         },
     )
 
