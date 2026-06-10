@@ -5,6 +5,7 @@
     <h2>{{ T['all_responses'] }} ({{ rows|length }})</h2>
     <div>
         <a href="{{ url_for('admin_export_csv') }}" class="btn btn-ghost">⬇ {{ T['export_csv'] }}</a>
+        <a href="{{ url_for('admin_export_xlsx') }}" class="btn btn-ghost">⬇ Excel İndir</a>
         <a href="{{ url_for('admin_logout') }}" class="btn btn-ghost">{{ T['logout'] }}</a>
     </div>
 </div>
