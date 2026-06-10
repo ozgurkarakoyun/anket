@@ -202,6 +202,20 @@ def get_answer_lists(row):
     return right_answers, left_answers, unilateral_answers
 
 
+def build_answer_rows(questions, answers, lang):
+    """Build display rows that include question text, numeric value and localized answer."""
+    rows = []
+    for i, question in enumerate(questions):
+        value = answers[i] if i < len(answers) else ''
+        rows.append({
+            'number': i + 1,
+            'question': question,
+            'value': value,
+            'answer': answer_text(lang, value),
+        })
+    return rows
+
+
 # ---------- Routes ----------
 @app.route('/')
 def index():
@@ -366,12 +380,25 @@ def result(response_id):
     row = db.execute('SELECT * FROM responses WHERE id = ?', (response_id,)).fetchone()
     if not row:
         abort(404)
+
+    row_lang = row['language'] if row['language'] in QUESTIONS else DEFAULT_LANG
+    questions_for_row = QUESTIONS.get(row_lang, QUESTIONS[DEFAULT_LANG])
+    right_answers, left_answers, unilateral_answers = get_answer_lists(row)
+    has_answer_details = any(value != '' for value in (right_answers + left_answers + unilateral_answers))
+
     return render_template(
         'results.html',
         r=row,
         score_label_right=score_label(row['fjs_score_right'], lang) if row['fjs_score_right'] is not None else '',
         score_label_left=score_label(row['fjs_score_left'], lang) if row['fjs_score_left'] is not None else '',
         score_label_uni=score_label(row['fjs_score_unilateral'], lang) if row['fjs_score_unilateral'] is not None else '',
+        show_answer_details=bool(session.get('is_admin')),
+        has_answer_details=has_answer_details,
+        right_answer_rows=build_answer_rows(questions_for_row, right_answers, row_lang),
+        left_answer_rows=build_answer_rows(questions_for_row, left_answers, row_lang),
+        unilateral_answer_rows=build_answer_rows(questions_for_row, unilateral_answers, row_lang),
+        amputation_level_right_label=amputation_level_text(row['amputation_level_right']),
+        amputation_level_left_label=amputation_level_text(row['amputation_level_left']),
     )
 
 
