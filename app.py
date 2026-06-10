@@ -29,6 +29,13 @@ ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin1234')  # CHANGE in Rail
 
 DEFAULT_LANG = 'tr'
 
+AMPUTATION_LEVEL_LABELS = {
+    'transfemoral': 'Transfemoral (Diz üstü amputasyon)',
+    'knee_disart': 'Diz dezartikülasyonu',
+    'transtibial': 'Transtibial (Diz altı amputasyon)',
+    'hip_disart': 'Kalça dezartikülasyonu',
+}
+
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
 
@@ -87,15 +94,18 @@ def init_db():
     """Create tables and run lightweight migrations for existing databases."""
     conn = sqlite3.connect(DB_PATH)
     conn.executescript(SCHEMA)
-    # Add new columns if upgrading from an older schema
+
+    # Add new columns if upgrading from an older schema.
     cursor = conn.execute("PRAGMA table_info(responses)")
     columns = {row[1] for row in cursor.fetchall()}
     for new_col, sql_type in [
         ('amputation_month_right', 'INTEGER'),
         ('amputation_month_left', 'INTEGER'),
+        ('answers_json', 'TEXT'),
     ]:
         if new_col not in columns:
             conn.execute(f"ALTER TABLE responses ADD COLUMN {new_col} {sql_type}")
+
     conn.commit()
     conn.close()
 
@@ -146,7 +156,7 @@ def safe_json_loads(value):
 
 def answer_text(lang, value):
     """Return localized answer text for a numeric FJS answer."""
-    if value is None:
+    if value is None or value == '':
         return ''
     try:
         value = int(value)
@@ -156,6 +166,13 @@ def answer_text(lang, value):
     if 0 <= value < len(options):
         return options[value]
     return ''
+
+
+def amputation_level_text(value):
+    """Return a human-readable Turkish label for the stored amputation level code."""
+    if not value:
+        return ''
+    return AMPUTATION_LEVEL_LABELS.get(value, value)
 
 
 def get_answer_lists(row):
@@ -400,10 +417,13 @@ def admin_export_csv():
         'procedure_type', 'side',
         'surgery_month_right', 'surgery_year_right',
         'surgery_month_left',  'surgery_year_left',
-        'amputation_month_right', 'amputation_year_right', 'amputation_level_right',
-        'amputation_month_left',  'amputation_year_left',  'amputation_level_left',
+        'amputation_month_right', 'amputation_year_right',
+        'amputation_level_right', 'amputation_level_right_label',
+        'amputation_month_left',  'amputation_year_left',
+        'amputation_level_left', 'amputation_level_left_label',
         'fjs_right', 'fjs_left', 'fjs_unilateral',
     ]
+
     answer_headers = []
     for i in range(1, 13):
         answer_headers.extend([f'right_q{i}_value', f'right_q{i}_answer'])
@@ -430,8 +450,10 @@ def admin_export_csv():
             r['procedure_type'], r['side'],
             r['surgery_month_right'], r['surgery_year_right'],
             r['surgery_month_left'],  r['surgery_year_left'],
-            r['amputation_month_right'], r['amputation_year_right'], r['amputation_level_right'],
-            r['amputation_month_left'],  r['amputation_year_left'],  r['amputation_level_left'],
+            r['amputation_month_right'], r['amputation_year_right'],
+            r['amputation_level_right'], amputation_level_text(r['amputation_level_right']),
+            r['amputation_month_left'],  r['amputation_year_left'],
+            r['amputation_level_left'], amputation_level_text(r['amputation_level_left']),
             r['fjs_score_right'], r['fjs_score_left'], r['fjs_score_unilateral'],
         ] + answer_values + [r['answers_json']])
 
