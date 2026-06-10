@@ -134,6 +134,57 @@ def admin_required(f):
     return wrapper
 
 
+def safe_json_loads(value):
+    """Decode JSON safely; return an empty dict if old/broken data exists."""
+    if not value:
+        return {}
+    try:
+        return json.loads(value)
+    except (TypeError, ValueError):
+        return {}
+
+
+def answer_text(lang, value):
+    """Return localized answer text for a numeric FJS answer."""
+    if value is None:
+        return ''
+    try:
+        value = int(value)
+    except (TypeError, ValueError):
+        return ''
+    options = ANSWERS.get(lang) or ANSWERS[DEFAULT_LANG]
+    if 0 <= value < len(options):
+        return options[value]
+    return ''
+
+
+def get_answer_lists(row):
+    """Return right, left and unilateral answer lists from stored answers_json."""
+    payload = safe_json_loads(row['answers_json'])
+    side = row['side']
+
+    right_answers = [''] * 12
+    left_answers = [''] * 12
+    unilateral_answers = [''] * 12
+
+    if side == 'bilateral':
+        right = payload.get('right') or []
+        left = payload.get('left') or []
+        for i in range(12):
+            right_answers[i] = right[i] if i < len(right) else ''
+            left_answers[i] = left[i] if i < len(left) else ''
+    else:
+        answers = payload.get('answers') or []
+        for i in range(12):
+            unilateral_answers[i] = answers[i] if i < len(answers) else ''
+        if side == 'right':
+            right_answers = unilateral_answers[:]
+        elif side == 'left':
+            left_answers = unilateral_answers[:]
+
+    return right_answers, left_answers, unilateral_answers
+
+
 # ---------- Routes ----------
 @app.route('/')
 def index():
@@ -200,7 +251,6 @@ def patient_info():
         # Clear fields that don't apply to the selected procedure
         is_amputee = procedure_type in AMPUTEE_PROCEDURES
         is_socket = procedure_type == 'socket_prosthesis'
-        is_osseo = procedure_type == 'osseointegration'
 
         session['patient'] = {
             'language': lang,
@@ -344,7 +394,8 @@ def admin_export_csv():
     output = io.StringIO()
     output.write('\ufeff')  # BOM for Excel UTF-8 compatibility
     writer = csv.writer(output)
-    writer.writerow([
+
+    base_headers = [
         'id', 'created_at', 'language', 'name', 'age',
         'procedure_type', 'side',
         'surgery_month_right', 'surgery_year_right',
@@ -352,8 +403,28 @@ def admin_export_csv():
         'amputation_month_right', 'amputation_year_right', 'amputation_level_right',
         'amputation_month_left',  'amputation_year_left',  'amputation_level_left',
         'fjs_right', 'fjs_left', 'fjs_unilateral',
-    ])
+    ]
+    answer_headers = []
+    for i in range(1, 13):
+        answer_headers.extend([f'right_q{i}_value', f'right_q{i}_answer'])
+    for i in range(1, 13):
+        answer_headers.extend([f'left_q{i}_value', f'left_q{i}_answer'])
+    for i in range(1, 13):
+        answer_headers.extend([f'unilateral_q{i}_value', f'unilateral_q{i}_answer'])
+    writer.writerow(base_headers + answer_headers + ['answers_json'])
+
     for r in rows:
+        lang = r['language'] if r['language'] in ANSWERS else DEFAULT_LANG
+        right_answers, left_answers, unilateral_answers = get_answer_lists(r)
+
+        answer_values = []
+        for value in right_answers:
+            answer_values.extend([value, answer_text(lang, value)])
+        for value in left_answers:
+            answer_values.extend([value, answer_text(lang, value)])
+        for value in unilateral_answers:
+            answer_values.extend([value, answer_text(lang, value)])
+
         writer.writerow([
             r['id'], r['created_at'], r['language'], r['name'], r['age'],
             r['procedure_type'], r['side'],
@@ -362,7 +433,7 @@ def admin_export_csv():
             r['amputation_month_right'], r['amputation_year_right'], r['amputation_level_right'],
             r['amputation_month_left'],  r['amputation_year_left'],  r['amputation_level_left'],
             r['fjs_score_right'], r['fjs_score_left'], r['fjs_score_unilateral'],
-        ])
+        ] + answer_values + [r['answers_json']])
 
     return Response(
         output.getvalue(),
