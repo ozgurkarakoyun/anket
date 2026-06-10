@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="form-card">
+    <h1>Hasta Bilgilerini Düzenle</h1>
+    <p class="muted">Bu ekranda sadece hasta ve ameliyat/amputasyon bilgileri düzenlenir. Anket cevapları değiştirilmez.</p>
+
+    <form method="post" class="patient-form">
+        <div class="form-grid">
+            <div class="form-group">
+                <label for="name">{{ T['name'] }}</label>
+                <input type="text" id="name" name="name" value="{{ r['name'] }}" required>
+            </div>
+
+            <div class="form-group">
+                <label for="age">{{ T['age'] }}</label>
+                <input type="number" id="age" name="age" min="0" max="120" value="{{ r['age'] or '' }}">
+            </div>
+
+            <div class="form-group">
+                <label for="language">Dil</label>
+                <select id="language" name="language">
+                    {% for code, info in languages.items() %}
+                        <option value="{{ code }}" {% if r['language'] == code %}selected{% endif %}>{{ info.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="procedure_type">{{ T['procedure_type'] }}</label>
+                <select id="procedure_type" name="procedure_type">
+                    {% for procedure in procedures %}
+                        <option value="{{ procedure }}" {% if r['procedure_type'] == procedure %}selected{% endif %}>
+                            {% if procedure == 'knee' %}{{ T['knee'] }}
+                            {% elif procedure == 'hip' %}{{ T['hip'] }}
+                            {% elif procedure == 'osseointegration' %}{{ T['osseointegration'] }}
+                            {% else %}{{ T['socket_prosthesis'] }}{% endif %}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="side">{{ T['side'] }}</label>
+                <select id="side" name="side">
+                    {% for side in allowed_sides %}
+                        <option value="{{ side }}" {% if r['side'] == side %}selected{% endif %}>
+                            {% if side == 'right' %}{{ T['right'] }}
+                            {% elif side == 'left' %}{{ T['left'] }}
+                            {% else %}{{ T['bilateral'] }}{% endif %}
+                        </option>
+                    {% endfor %}
+                </select>
+                {% if r['side'] == 'bilateral' %}
+                    <small class="muted">Bilateral kayıt tek tarafa çevrilmez; anket cevapları sağ/sol ayrı tutulur.</small>
+                {% endif %}
+            </div>
+        </div>
+
+        <h2>Sağ Taraf Bilgileri</h2>
+        <div class="form-grid">
+            <div class="form-group">
+                <label>Ameliyat Ayı</label>
+                <select name="surgery_month_right">
+                    <option value="">—</option>
+                    {% for m in months %}
+                        <option value="{{ m }}" {% if r['surgery_month_right'] == m %}selected{% endif %}>{{ m }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Ameliyat Yılı</label>
+                <select name="surgery_year_right">
+                    <option value="">—</option>
+                    {% for y in surgery_years %}
+                        <option value="{{ y }}" {% if r['surgery_year_right'] == y %}selected{% endif %}>{{ y }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Amputasyon Ayı</label>
+                <select name="amputation_month_right">
+                    <option value="">—</option>
+                    {% for m in months %}
+                        <option value="{{ m }}" {% if r['amputation_month_right'] == m %}selected{% endif %}>{{ m }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Amputasyon Yılı</label>
+                <select name="amputation_year_right">
+                    <option value="">—</option>
+                    {% for y in amputation_years %}
+                        <option value="{{ y }}" {% if r['amputation_year_right'] == y %}selected{% endif %}>{{ y }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Amputasyon Düzeyi</label>
+                <select name="amputation_level_right">
+                    <option value="">—</option>
+                    {% for code, label in amputation_levels.items() %}
+                        <option value="{{ code }}" {% if r['amputation_level_right'] == code %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <h2>Sol Taraf Bilgileri</h2>
+        <div class="form-grid">
+            <div class="form-group">
+                <label>Ameliyat Ayı</label>
+                <select name="surgery_month_left">
+                    <option value="">—</option>
+                    {% for m in months %}
+                        <option value="{{ m }}" {% if r['surgery_month_left'] == m %}selected{% endif %}>{{ m }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Ameliyat Yılı</label>
+                <select name="surgery_year_left">
+                    <option value="">—</option>
+                    {% for y in surgery_years %}
+                        <option value="{{ y }}" {% if r['surgery_year_left'] == y %}selected{% endif %}>{{ y }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Amputasyon Ayı</label>
+                <select name="amputation_month_left">
+                    <option value="">—</option>
+                    {% for m in months %}
+                        <option value="{{ m }}" {% if r['amputation_month_left'] == m %}selected{% endif %}>{{ m }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Amputasyon Yılı</label>
+                <select name="amputation_year_left">
+                    <option value="">—</option>
+                    {% for y in amputation_years %}
+                        <option value="{{ y }}" {% if r['amputation_year_left'] == y %}selected{% endif %}>{{ y }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Amputasyon Düzeyi</label>
+                <select name="amputation_level_left">
+                    <option value="">—</option>
+                    {% for code, label in amputation_levels.items() %}
+                        <option value="{{ code }}" {% if r['amputation_level_left'] == code %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <div class="actions no-print">
+            <a href="{{ url_for('result', response_id=r['id']) }}" class="btn btn-ghost">Vazgeç</a>
+            <button type="submit" class="btn btn-primary">Kaydet</button>
+        </div>
+    </form>
+</div>
+{% endblock %}
