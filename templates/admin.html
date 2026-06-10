@@ -23,7 +23,7 @@
                 <th>{{ T['side'] }}</th>
                 <th>FJS ({{ T['right'] }})</th>
                 <th>FJS ({{ T['left'] }})</th>
-                <th></th>
+                <th>İşlem</th>
             </tr>
         </thead>
         <tbody>
@@ -54,8 +54,12 @@
                     {% elif r['fjs_score_unilateral'] is not none and r['side'] == 'left' %}{{ '%.1f'|format(r['fjs_score_unilateral']) }}
                     {% else %}—{% endif %}
                 </td>
-                <td>
+                <td class="action-cell">
                     <a href="{{ url_for('result', response_id=r['id']) }}" class="btn btn-small">{{ T['view'] }}</a>
+                    <a href="{{ url_for('admin_edit_response', response_id=r['id']) }}" class="btn btn-small btn-ghost">Düzenle</a>
+                    <form method="post" action="{{ url_for('admin_archive_response', response_id=r['id']) }}" class="inline-form" onsubmit="return confirm('Bu hastayı admin listesinden ve export dosyalarından kaldırmak istediğinize emin misiniz?');">
+                        <button type="submit" class="btn btn-small btn-danger">Sil</button>
+                    </form>
                 </td>
             </tr>
             {% endfor %}
