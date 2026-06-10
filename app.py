@@ -26,11 +26,9 @@ from openpyxl.utils import get_column_letter
 from translations import LANGUAGES, QUESTIONS, ANSWERS, T, t, PROCEDURES, AMPUTEE_PROCEDURES
 from scoring import calculate_fjs_score, score_label
 
-# ---------- Configuration ----------
 DB_PATH = os.environ.get('DB_PATH', os.path.join(os.path.dirname(__file__), 'fjs.db'))
 SECRET_KEY = os.environ.get('SECRET_KEY', 'change-me-dev-only-secret-key-12345')
-ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin1234')  # CHANGE in Railway env vars!
-
+ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin1234')
 DEFAULT_LANG = 'tr'
 
 AMPUTATION_LEVEL_LABELS = {
@@ -43,8 +41,6 @@ AMPUTATION_LEVEL_LABELS = {
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
 
-
-# ---------- Database ----------
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS responses (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -52,30 +48,24 @@ CREATE TABLE IF NOT EXISTS responses (
     language TEXT,
     name TEXT NOT NULL,
     age INTEGER,
-    procedure_type TEXT NOT NULL,        -- 'knee' | 'hip' | 'osseointegration' | 'socket_prosthesis'
-    side TEXT NOT NULL,                  -- 'right' | 'left' | 'bilateral'
-
-    -- Surgery dates (knee/hip surgery, or osseointegration surgery)
+    procedure_type TEXT NOT NULL,
+    side TEXT NOT NULL,
     surgery_month_right INTEGER,
     surgery_year_right INTEGER,
     surgery_month_left INTEGER,
     surgery_year_left INTEGER,
-
-    -- Amputation info (osseointegration: year+level; socket: month+year+level)
     amputation_month_right INTEGER,
     amputation_year_right INTEGER,
     amputation_level_right TEXT,
     amputation_month_left INTEGER,
     amputation_year_left INTEGER,
     amputation_level_left TEXT,
-
-    -- Scores
     fjs_score_right REAL,
     fjs_score_left REAL,
     fjs_score_unilateral REAL,
-
-    -- Raw answers (JSON list/lists of ints)
-    answers_json TEXT
+    answers_json TEXT,
+    is_archived INTEGER DEFAULT 0,
+    archived_at TEXT
 );
 """
 
@@ -95,32 +85,25 @@ def close_db(_exc):
 
 
 def init_db():
-    """Create tables and run lightweight migrations for existing databases."""
     conn = sqlite3.connect(DB_PATH)
     conn.executescript(SCHEMA)
-
-    # Add new columns if upgrading from an older schema.
     cursor = conn.execute("PRAGMA table_info(responses)")
     columns = {row[1] for row in cursor.fetchall()}
     for new_col, sql_type in [
         ('amputation_month_right', 'INTEGER'),
         ('amputation_month_left', 'INTEGER'),
         ('answers_json', 'TEXT'),
+        ('is_archived', 'INTEGER DEFAULT 0'),
+        ('archived_at', 'TEXT'),
     ]:
         if new_col not in columns:
             conn.execute(f"ALTER TABLE responses ADD COLUMN {new_col} {sql_type}")
-
     conn.commit()
     conn.close()
 
 
-# ---------- Helpers ----------
 def get_lang():
-    """Return current language code; default Turkish."""
-    lang = (request.args.get('lang') or
-            request.form.get('lang') or
-            session.get('lang') or
-            DEFAULT_LANG)
+    lang = (request.args.get('lang') or request.form.get('lang') or session.get('lang') or DEFAULT_LANG)
     if lang not in LANGUAGES:
         lang = DEFAULT_LANG
     session['lang'] = lang
@@ -149,7 +132,6 @@ def admin_required(f):
 
 
 def safe_json_loads(value):
-    """Decode JSON safely; return an empty dict if old/broken data exists."""
     if not value:
         return {}
     try:
@@ -159,7 +141,6 @@ def safe_json_loads(value):
 
 
 def answer_text(lang, value):
-    """Return localized answer text for a numeric FJS answer."""
     if value is None or value == '':
         return ''
     try:
@@ -173,17 +154,34 @@ def answer_text(lang, value):
 
 
 def amputation_level_text(value):
-    """Return a human-readable Turkish label for the stored amputation level code."""
     if not value:
         return ''
     return AMPUTATION_LEVEL_LABELS.get(value, value)
 
 
+def parse_int_or_none(value):
+    if value in (None, ''):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def clean_text(value):
+    if value is None:
+        return None
+    value = str(value).strip()
+    return value or None
+
+
+def active_filter():
+    return 'COALESCE(is_archived, 0) = 0'
+
+
 def get_answer_lists(row):
-    """Return right, left and unilateral answer lists from stored answers_json."""
     payload = safe_json_loads(row['answers_json'])
     side = row['side']
-
     right_answers = [''] * 12
     left_answers = [''] * 12
     unilateral_answers = [''] * 12
@@ -202,38 +200,36 @@ def get_answer_lists(row):
             right_answers = unilateral_answers[:]
         elif side == 'left':
             left_answers = unilateral_answers[:]
-
     return right_answers, left_answers, unilateral_answers
 
 
 def build_answer_rows(questions, answers, lang):
-    """Build display rows that include question text, numeric value and localized answer."""
     rows = []
     for i, question in enumerate(questions):
         value = answers[i] if i < len(answers) else ''
-        rows.append({
-            'number': i + 1,
-            'question': question,
-            'value': value,
-            'answer': answer_text(lang, value),
-        })
+        rows.append({'number': i + 1, 'question': question, 'value': value, 'answer': answer_text(lang, value)})
     return rows
 
 
+def normalize_scores_for_side(row, side):
+    if side == 'bilateral':
+        return row['fjs_score_right'], row['fjs_score_left'], None
+    single_score = row['fjs_score_unilateral']
+    if single_score is None:
+        single_score = row['fjs_score_right'] if row['fjs_score_right'] is not None else row['fjs_score_left']
+    if side == 'right':
+        return single_score, None, single_score
+    return None, single_score, single_score
+
+
 def build_export_headers():
-    """Build one canonical export header list for both CSV and Excel."""
     base_headers = [
-        'id', 'created_at', 'language', 'name', 'age',
-        'procedure_type', 'side',
-        'surgery_month_right', 'surgery_year_right',
-        'surgery_month_left',  'surgery_year_left',
-        'amputation_month_right', 'amputation_year_right',
-        'amputation_level_right', 'amputation_level_right_label',
-        'amputation_month_left',  'amputation_year_left',
-        'amputation_level_left', 'amputation_level_left_label',
+        'id', 'created_at', 'language', 'name', 'age', 'procedure_type', 'side',
+        'surgery_month_right', 'surgery_year_right', 'surgery_month_left', 'surgery_year_left',
+        'amputation_month_right', 'amputation_year_right', 'amputation_level_right', 'amputation_level_right_label',
+        'amputation_month_left', 'amputation_year_left', 'amputation_level_left', 'amputation_level_left_label',
         'fjs_right', 'fjs_left', 'fjs_unilateral',
     ]
-
     answer_headers = []
     for i in range(1, 13):
         answer_headers.extend([f'right_q{i}_value', f'right_q{i}_answer'])
@@ -241,15 +237,12 @@ def build_export_headers():
         answer_headers.extend([f'left_q{i}_value', f'left_q{i}_answer'])
     for i in range(1, 13):
         answer_headers.extend([f'unilateral_q{i}_value', f'unilateral_q{i}_answer'])
-
     return base_headers + answer_headers + ['answers_json']
 
 
 def build_export_row(row):
-    """Build one canonical export data row for both CSV and Excel."""
     lang = row['language'] if row['language'] in ANSWERS else DEFAULT_LANG
     right_answers, left_answers, unilateral_answers = get_answer_lists(row)
-
     answer_values = []
     for value in right_answers:
         answer_values.extend([value, answer_text(lang, value)])
@@ -257,35 +250,27 @@ def build_export_row(row):
         answer_values.extend([value, answer_text(lang, value)])
     for value in unilateral_answers:
         answer_values.extend([value, answer_text(lang, value)])
-
     return [
         row['id'], row['created_at'], row['language'], row['name'], row['age'],
-        row['procedure_type'], row['side'],
-        row['surgery_month_right'], row['surgery_year_right'],
-        row['surgery_month_left'], row['surgery_year_left'],
-        row['amputation_month_right'], row['amputation_year_right'],
-        row['amputation_level_right'], amputation_level_text(row['amputation_level_right']),
-        row['amputation_month_left'], row['amputation_year_left'],
-        row['amputation_level_left'], amputation_level_text(row['amputation_level_left']),
-        row['fjs_score_right'], row['fjs_score_left'], row['fjs_score_unilateral'],
+        row['procedure_type'], row['side'], row['surgery_month_right'], row['surgery_year_right'],
+        row['surgery_month_left'], row['surgery_year_left'], row['amputation_month_right'],
+        row['amputation_year_right'], row['amputation_level_right'], amputation_level_text(row['amputation_level_right']),
+        row['amputation_month_left'], row['amputation_year_left'], row['amputation_level_left'],
+        amputation_level_text(row['amputation_level_left']), row['fjs_score_right'], row['fjs_score_left'],
+        row['fjs_score_unilateral'],
     ] + answer_values + [row['answers_json'] or '']
 
 
 def get_export_table():
-    """Return headers and rows for all admin exports."""
     db = get_db()
-    rows = db.execute('SELECT * FROM responses ORDER BY created_at DESC').fetchall()
-    headers = build_export_headers()
-    data_rows = [build_export_row(row) for row in rows]
-    return headers, data_rows
+    rows = db.execute(f'SELECT * FROM responses WHERE {active_filter()} ORDER BY created_at DESC').fetchall()
+    return build_export_headers(), [build_export_row(row) for row in rows]
 
 
 def export_filename(extension):
-    """Return a timestamped filename; seconds avoid repeated cached filenames."""
     return f'fjs_responses_{datetime.now().strftime("%Y%m%d_%H%M%S")}.{extension}'
 
 
-# ---------- Routes ----------
 @app.route('/')
 def index():
     get_lang()
@@ -301,7 +286,6 @@ def patient_info():
         age = form.get('age', type=int)
         procedure_type = form.get('procedure_type')
         side = form.get('side')
-
         errors = []
         if not name:
             errors.append('name')
@@ -310,13 +294,10 @@ def patient_info():
         if not side or side not in ('right', 'left', 'bilateral'):
             errors.append('side')
 
-        # Surgery dates (knee/hip/osseo only — NOT for socket prosthesis)
         sm_r = form.get('surgery_month_right', type=int)
         sy_r = form.get('surgery_year_right', type=int)
         sm_l = form.get('surgery_month_left', type=int)
         sy_l = form.get('surgery_year_left', type=int)
-
-        # Amputation info (amputee procedures only)
         amp_m_r = form.get('amputation_month_right', type=int)
         amp_y_r = form.get('amputation_year_right', type=int)
         amp_l_r = form.get('amputation_level_right')
@@ -329,41 +310,28 @@ def patient_info():
                 errors.append('surgery_date_right')
             if side in ('left', 'bilateral') and not (sm_l and sy_l):
                 errors.append('surgery_date_left')
-
         if procedure_type == 'osseointegration':
-            # Year + level required (month not asked)
             if side in ('right', 'bilateral') and not (amp_y_r and amp_l_r):
                 errors.append('amputation_right')
             if side in ('left', 'bilateral') and not (amp_y_l and amp_l_l):
                 errors.append('amputation_left')
-
         if procedure_type == 'socket_prosthesis':
-            # Month + year + level required (no surgery date)
             if side in ('right', 'bilateral') and not (amp_m_r and amp_y_r and amp_l_r):
                 errors.append('amputation_right')
             if side in ('left', 'bilateral') and not (amp_m_l and amp_y_l and amp_l_l):
                 errors.append('amputation_left')
-
         if errors:
             flash(t(lang, 'required_error'), 'error')
             return render_template('patient_info.html', form=form, errors=errors)
 
-        # Clear fields that don't apply to the selected procedure
         is_amputee = procedure_type in AMPUTEE_PROCEDURES
         is_socket = procedure_type == 'socket_prosthesis'
-
         session['patient'] = {
-            'language': lang,
-            'name': name,
-            'age': age,
-            'procedure_type': procedure_type,
-            'side': side,
-            # Surgery dates: only for knee/hip/osseo
+            'language': lang, 'name': name, 'age': age, 'procedure_type': procedure_type, 'side': side,
             'surgery_month_right': sm_r if not is_socket else None,
             'surgery_year_right': sy_r if not is_socket else None,
             'surgery_month_left': sm_l if not is_socket else None,
             'surgery_year_left': sy_l if not is_socket else None,
-            # Amputation info: socket needs full date; osseo needs year only
             'amputation_month_right': amp_m_r if is_socket else None,
             'amputation_year_right': amp_y_r if is_amputee else None,
             'amputation_level_right': amp_l_r if is_amputee else None,
@@ -372,7 +340,6 @@ def patient_info():
             'amputation_level_left': amp_l_l if is_amputee else None,
         }
         return redirect(url_for('questions'))
-
     return render_template('patient_info.html', form={}, errors=[])
 
 
@@ -382,7 +349,6 @@ def questions():
     patient = session.get('patient')
     if not patient:
         return redirect(url_for('patient_info'))
-
     questions_text = QUESTIONS[lang]
     answer_options = ANSWERS[lang]
     bilateral = patient['side'] == 'bilateral'
@@ -410,51 +376,37 @@ def questions():
         cur = db.execute(
             """INSERT INTO responses
                (language, name, age, procedure_type, side,
-                surgery_month_right, surgery_year_right,
-                surgery_month_left, surgery_year_left,
+                surgery_month_right, surgery_year_right, surgery_month_left, surgery_year_left,
                 amputation_month_right, amputation_year_right, amputation_level_right,
-                amputation_month_left,  amputation_year_left,  amputation_level_left,
-                fjs_score_right, fjs_score_left, fjs_score_unilateral,
-                answers_json)
+                amputation_month_left, amputation_year_left, amputation_level_left,
+                fjs_score_right, fjs_score_left, fjs_score_unilateral, answers_json)
                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
-                patient['language'], patient['name'], patient['age'],
-                patient['procedure_type'], patient['side'],
-                patient['surgery_month_right'], patient['surgery_year_right'],
-                patient['surgery_month_left'], patient['surgery_year_left'],
+                patient['language'], patient['name'], patient['age'], patient['procedure_type'], patient['side'],
+                patient['surgery_month_right'], patient['surgery_year_right'], patient['surgery_month_left'], patient['surgery_year_left'],
                 patient['amputation_month_right'], patient['amputation_year_right'], patient['amputation_level_right'],
-                patient['amputation_month_left'],  patient['amputation_year_left'],  patient['amputation_level_left'],
-                score_right, score_left, score_unilateral,
-                json.dumps(answers_payload, ensure_ascii=False),
+                patient['amputation_month_left'], patient['amputation_year_left'], patient['amputation_level_left'],
+                score_right, score_left, score_unilateral, json.dumps(answers_payload, ensure_ascii=False),
             )
         )
         db.commit()
         new_id = cur.lastrowid
         session.pop('patient', None)
         return redirect(url_for('result', response_id=new_id))
-
-    return render_template(
-        'questions.html',
-        patient=patient,
-        questions=questions_text,
-        answers=answer_options,
-        bilateral=bilateral,
-    )
+    return render_template('questions.html', patient=patient, questions=questions_text, answers=answer_options, bilateral=bilateral)
 
 
 @app.route('/result/<int:response_id>')
 def result(response_id):
     lang = get_lang()
     db = get_db()
-    row = db.execute('SELECT * FROM responses WHERE id = ?', (response_id,)).fetchone()
+    row = db.execute(f'SELECT * FROM responses WHERE id = ? AND {active_filter()}', (response_id,)).fetchone()
     if not row:
         abort(404)
-
     row_lang = row['language'] if row['language'] in QUESTIONS else DEFAULT_LANG
     questions_for_row = QUESTIONS.get(row_lang, QUESTIONS[DEFAULT_LANG])
     right_answers, left_answers, unilateral_answers = get_answer_lists(row)
     has_answer_details = any(value != '' for value in (right_answers + left_answers + unilateral_answers))
-
     return render_template(
         'results.html',
         r=row,
@@ -471,7 +423,6 @@ def result(response_id):
     )
 
 
-# ---------- Admin ----------
 @app.route('/admin/login', methods=['GET', 'POST'])
 def admin_login():
     get_lang()
@@ -494,22 +445,130 @@ def admin_logout():
 @admin_required
 def admin_responses():
     db = get_db()
-    rows = db.execute('SELECT * FROM responses ORDER BY created_at DESC').fetchall()
+    rows = db.execute(f'SELECT * FROM responses WHERE {active_filter()} ORDER BY created_at DESC').fetchall()
     return render_template('admin.html', rows=rows)
+
+
+@app.route('/admin/response/<int:response_id>/edit', methods=['GET', 'POST'])
+@admin_required
+def admin_edit_response(response_id):
+    get_lang()
+    db = get_db()
+    row = db.execute(f'SELECT * FROM responses WHERE id = ? AND {active_filter()}', (response_id,)).fetchone()
+    if not row:
+        abort(404)
+    allowed_sides = ['bilateral'] if row['side'] == 'bilateral' else ['right', 'left']
+
+    if request.method == 'POST':
+        name = (request.form.get('name') or '').strip()
+        age = parse_int_or_none(request.form.get('age'))
+        language = request.form.get('language') if request.form.get('language') in LANGUAGES else row['language']
+        procedure_type = request.form.get('procedure_type') if request.form.get('procedure_type') in PROCEDURES else row['procedure_type']
+        side = request.form.get('side') if request.form.get('side') in allowed_sides else row['side']
+        if not name:
+            flash('Hasta adı boş bırakılamaz.', 'error')
+            return redirect(url_for('admin_edit_response', response_id=response_id))
+
+        sm_r = parse_int_or_none(request.form.get('surgery_month_right'))
+        sy_r = parse_int_or_none(request.form.get('surgery_year_right'))
+        sm_l = parse_int_or_none(request.form.get('surgery_month_left'))
+        sy_l = parse_int_or_none(request.form.get('surgery_year_left'))
+        amp_m_r = parse_int_or_none(request.form.get('amputation_month_right'))
+        amp_y_r = parse_int_or_none(request.form.get('amputation_year_right'))
+        amp_l_r = clean_text(request.form.get('amputation_level_right'))
+        amp_m_l = parse_int_or_none(request.form.get('amputation_month_left'))
+        amp_y_l = parse_int_or_none(request.form.get('amputation_year_left'))
+        amp_l_l = clean_text(request.form.get('amputation_level_left'))
+
+        if row['side'] in ('right', 'left') and side in ('right', 'left') and row['side'] != side:
+            if side == 'left':
+                sm_l = sm_l or sm_r or row['surgery_month_right']
+                sy_l = sy_l or sy_r or row['surgery_year_right']
+                amp_m_l = amp_m_l or amp_m_r or row['amputation_month_right']
+                amp_y_l = amp_y_l or amp_y_r or row['amputation_year_right']
+                amp_l_l = amp_l_l or amp_l_r or row['amputation_level_right']
+            else:
+                sm_r = sm_r or sm_l or row['surgery_month_left']
+                sy_r = sy_r or sy_l or row['surgery_year_left']
+                amp_m_r = amp_m_r or amp_m_l or row['amputation_month_left']
+                amp_y_r = amp_y_r or amp_y_l or row['amputation_year_left']
+                amp_l_r = amp_l_r or amp_l_l or row['amputation_level_left']
+
+        is_amputee = procedure_type in AMPUTEE_PROCEDURES
+        is_socket = procedure_type == 'socket_prosthesis'
+        if procedure_type not in ('knee', 'hip', 'osseointegration'):
+            sm_r = sy_r = sm_l = sy_l = None
+        if procedure_type == 'osseointegration':
+            amp_m_r = amp_m_l = None
+        if not is_amputee:
+            amp_m_r = amp_y_r = amp_l_r = None
+            amp_m_l = amp_y_l = amp_l_l = None
+        if side == 'right':
+            sm_l = sy_l = amp_m_l = amp_y_l = amp_l_l = None
+        elif side == 'left':
+            sm_r = sy_r = amp_m_r = amp_y_r = amp_l_r = None
+
+        fjs_score_right, fjs_score_left, fjs_score_unilateral = normalize_scores_for_side(row, side)
+        db.execute(
+            """UPDATE responses SET
+               language = ?, name = ?, age = ?, procedure_type = ?, side = ?,
+               surgery_month_right = ?, surgery_year_right = ?, surgery_month_left = ?, surgery_year_left = ?,
+               amputation_month_right = ?, amputation_year_right = ?, amputation_level_right = ?,
+               amputation_month_left = ?, amputation_year_left = ?, amputation_level_left = ?,
+               fjs_score_right = ?, fjs_score_left = ?, fjs_score_unilateral = ?
+               WHERE id = ?""",
+            (
+                language, name, age, procedure_type, side,
+                sm_r, sy_r, sm_l, sy_l,
+                amp_m_r, amp_y_r, amp_l_r,
+                amp_m_l, amp_y_l, amp_l_l,
+                fjs_score_right, fjs_score_left, fjs_score_unilateral,
+                response_id,
+            )
+        )
+        db.commit()
+        flash('Hasta bilgileri güncellendi. Anket cevapları değiştirilmedi.', 'success')
+        return redirect(url_for('result', response_id=response_id))
+
+    current_year = datetime.now().year
+    return render_template(
+        'admin_edit_response.html',
+        r=row,
+        allowed_sides=allowed_sides,
+        current_year=current_year,
+        surgery_years=range(current_year, 1979, -1),
+        amputation_years=range(current_year, 1949, -1),
+        months=range(1, 13),
+        languages=LANGUAGES,
+        procedures=PROCEDURES,
+        amputation_levels=AMPUTATION_LEVEL_LABELS,
+    )
+
+
+@app.route('/admin/response/<int:response_id>/archive', methods=['POST'])
+@admin_required
+def admin_archive_response(response_id):
+    db = get_db()
+    row = db.execute(f'SELECT id, name FROM responses WHERE id = ? AND {active_filter()}', (response_id,)).fetchone()
+    if not row:
+        flash('Kayıt bulunamadı.', 'error')
+        return redirect(url_for('admin_responses'))
+    db.execute("UPDATE responses SET is_archived = 1, archived_at = datetime('now') WHERE id = ?", (response_id,))
+    db.commit()
+    flash(f"{row['name']} kaydı listeden kaldırıldı.", 'success')
+    return redirect(url_for('admin_responses'))
 
 
 @app.route('/admin/export.csv')
 @admin_required
 def admin_export_csv():
     headers, data_rows = get_export_table()
-
     output = io.StringIO()
-    output.write('\ufeff')  # BOM for Excel UTF-8 compatibility
+    output.write('\ufeff')
     writer = csv.writer(output)
     writer.writerow(headers)
     writer.writerows(data_rows)
-
-    response = Response(
+    return Response(
         output.getvalue(),
         mimetype='text/csv',
         headers={
@@ -520,14 +579,12 @@ def admin_export_csv():
             'Expires': '0',
         },
     )
-    return response
 
 
 @app.route('/admin/export.xlsx')
 @admin_required
 def admin_export_xlsx():
     headers, data_rows = get_export_table()
-
     workbook = ExcelWorkbook()
     sheet = workbook.active
     sheet.title = 'FJS Yanıtları'
@@ -538,21 +595,17 @@ def admin_export_xlsx():
     header_fill = PatternFill(fill_type='solid', fgColor='1F4E78')
     header_font = Font(bold=True, color='FFFFFF')
     thin_border = Border(bottom=Side(style='thin', color='D9E2F3'))
-
     for cell in sheet[1]:
         cell.fill = header_fill
         cell.font = header_font
         cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
         cell.border = thin_border
-
     for row in sheet.iter_rows(min_row=2):
         for cell in row:
             cell.alignment = Alignment(vertical='top', wrap_text=True)
             cell.border = thin_border
-
     sheet.freeze_panes = 'A2'
     sheet.auto_filter.ref = sheet.dimensions
-
     for column_cells in sheet.columns:
         max_len = 0
         col_letter = get_column_letter(column_cells[0].column)
@@ -566,11 +619,9 @@ def admin_export_xlsx():
         else:
             width = min(max(max_len + 2, 10), 24)
         sheet.column_dimensions[col_letter].width = width
-
     xlsx_io = io.BytesIO()
     workbook.save(xlsx_io)
     xlsx_io.seek(0)
-
     return Response(
         xlsx_io.getvalue(),
         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -583,13 +634,11 @@ def admin_export_xlsx():
     )
 
 
-# ---------- Health check ----------
 @app.route('/healthz')
 def healthz():
     return 'ok', 200
 
 
-# ---------- Bootstrap ----------
 with app.app_context():
     init_db()
 
