@@ -1,5 +1,33 @@
 {% extends "base.html" %}
 
+{% macro answer_table(title, rows) %}
+    <div class="answer-detail-block">
+        <h3>{{ title }}</h3>
+        <div class="table-wrap answer-table-wrap">
+            <table class="data-table answer-table">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Soru</th>
+                        <th>Cevap Değeri</th>
+                        <th>Cevap</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in rows %}
+                    <tr>
+                        <td>{{ row.number }}</td>
+                        <td>{{ row.question }}</td>
+                        <td>{{ row.value if row.value != '' else '—' }}</td>
+                        <td>{{ row.answer if row.answer else '—' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+{% endmacro %}
+
 {% block content %}
 <div class="result-card">
     <div class="thank-you">{{ T['thank_you'] }}</div>
@@ -19,6 +47,12 @@
             {% elif r['side'] == 'left' %}{{ T['left'] }}
             {% else %}{{ T['bilateral'] }}{% endif %}
         </div>
+        {% if r['amputation_level_right'] %}
+            <div><strong>Sağ amputasyon düzeyi:</strong> {{ amputation_level_right_label }}</div>
+        {% endif %}
+        {% if r['amputation_level_left'] %}
+            <div><strong>Sol amputasyon düzeyi:</strong> {{ amputation_level_left_label }}</div>
+        {% endif %}
     </div>
 
     <div class="scores">
@@ -47,7 +81,30 @@
 
     <p class="score-explanation">{{ T['score_interpretation'] }}</p>
 
+    {% if show_answer_details %}
+        <section class="admin-answer-details no-print">
+            <h2>Verilen Cevaplar</h2>
+            {% if has_answer_details %}
+                {% if r['side'] == 'bilateral' %}
+                    {{ answer_table(T['right_side'], right_answer_rows) }}
+                    {{ answer_table(T['left_side'], left_answer_rows) }}
+                {% elif r['side'] == 'right' %}
+                    {{ answer_table(T['right_side'], right_answer_rows) }}
+                {% elif r['side'] == 'left' %}
+                    {{ answer_table(T['left_side'], left_answer_rows) }}
+                {% else %}
+                    {{ answer_table(T['fjs_score'], unilateral_answer_rows) }}
+                {% endif %}
+            {% else %}
+                <p class="muted">Bu kayıtta soru cevapları bulunamadı. Eski kayıtlar, answers_json alanı eklenmeden önce oluşturulmuş olabilir.</p>
+            {% endif %}
+        </section>
+    {% endif %}
+
     <div class="actions no-print">
+        {% if show_answer_details %}
+            <a href="{{ url_for('admin_responses') }}" class="btn btn-ghost">← Admin Listesi</a>
+        {% endif %}
         <button onclick="window.print()" class="btn btn-ghost">🖨 {{ T['print'] }}</button>
         <a href="{{ url_for('index') }}" class="btn btn-primary">{{ T['new_assessment'] }}</a>
     </div>
